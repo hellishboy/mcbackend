@@ -304,6 +304,45 @@ class ClickHouseChain(Chain):
         stats = self._get_row_at(idx, [f"__stat_{sname}" for sname in stat_names])
         return {sname[7:]: vals for sname, vals in stats.items()}
 
+    def get_draws_from_file(self, dir_name: str, var_name: str, slc: slice = slice(None)) -> numpy.ndarray:
+        var = self.variables[var_name]
+        dtype = var.dtype
+        nshape = var.shape if not var.undefined_ndim else None
+        # get rows from TSV
+        file = dir_name + var_name + '_' + self.cid + '.json'
+        df = pandas.read_json(file + '.bak')
+        data = df.T
+        #data = numpy.fromfile(file, dtype=dtype)
+        draws = len(data)
+        # Without draws return empty arrays of the correct shape/dtype
+        if not draws:
+            if is_rigid(nshape) and nshape is not None:
+                return numpy.empty(shape=[0, *nshape], dtype=dtype)
+            return numpy.array([], dtype=object)
+        # The unpacking must also account for non-rigid shapes
+        # and str-dtyped empty arrays default to fixed length 1 strings.
+        # The [None] list is slower, but more flexible in this regard.
+        buffer: Union[numpy.ndarray, Sequence]
+        if is_rigid(nshape) and dtype != "str":
+            assert nshape is not None
+            buffer = numpy.empty((draws, *nshape), dtype)
+        else:
+            buffer = [None] * draws
+        # for row in data.itertuples():
+        #     buffer[row.Index] = numpy.asarray(row._1, dtype)
+        for i in range(0, draws):
+            buffer[i] = numpy.asarray(data.iloc[i, 0], dtype)
+
+        # If the values are "ragged" (have different shapes) the
+        # numpy array must be dtype=object.
+        if len({v.shape for v in buffer}) > 1:
+            # To circumvent NumPy issue #19113
+            arr = numpy.empty(draws, dtype=object)
+            arr[:] = buffer
+            return arr
+        # Otherwise (identical shapes) we can collapse into one ndarray
+        return numpy.asarray(buffer, dtype=dtype)
+
 
 class ClickHouseRun(Run):
     """Represents an MCMC run stored in ClickHouse."""

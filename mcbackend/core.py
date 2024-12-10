@@ -191,7 +191,8 @@ class Run:
     def observed_data(self) -> Dict[str, numpy.ndarray]:
         return {dv.name: ndarray_to_numpy(dv.value) for dv in self.meta.data if dv.is_observed}
 
-    def to_inferencedata(self, *, equalize_chain_lengths: bool = True, **kwargs) -> InferenceData:
+    def to_inferencedata(self, *, var_names=None, sample_stats_on=False, nchains=4, from_file=False, dir_name=None,
+                         equalize_chain_lengths: bool = True, **kwargs) -> InferenceData:
         """Creates an ArviZ ``InferenceData`` object from this run.
 
         Parameters
@@ -205,13 +206,24 @@ class Run:
         -------
         idata : arviz.InferenceData
             Samples and metadata of this inference run.
+            :param from_file:
+            :param dir_name:
+            :param equalize_chain_lengths:
+            :param var_names:
+            :param sample_stats_on:
         """
         if not _HAS_ARVIZ:
             raise ModuleNotFoundError("ArviZ is not installed.")
 
-        variables = self.meta.variables
-        chains = self.get_chains()
+        var_list = [n.name for n in self.meta.variables]
 
+        if var_names:
+            variables = list(numpy.array(self.meta.variables)[numpy.array([var_list.index(v) for v in var_names])])
+        else:
+            variables = self.meta.variables
+        chains = self.get_chains()
+        # subset number of chains
+        chains = chains[0:nchains]
         nonrigid_vars = {var for var in variables if var.undefined_ndim or not is_rigid(var.shape)}
         if nonrigid_vars:
             raise NotImplementedError(
@@ -265,25 +277,41 @@ class Run:
 
             # Split all variables draws into warmup/posterior
             for var in variables:
-                draws = chain.get_draws(var.name, slc)
-                warmup_posterior[var.name].append(draws[tune])
-                posterior[var.name].append(draws[~tune])
+                if from_file:
+                    draws = chain.get_draws_from_file(dir_name, var.name, slc)
+                    warmup_posterior[var.name].append(draws[tune])
+                    posterior[var.name].append(draws[~tune])
+                else:
+                    draws = chain.get_draws(var.name, slc)
+                    warmup_posterior[var.name].append(draws[tune])
+                    posterior[var.name].append(draws[~tune])
             # Same for sample stats
-            for svar in self.meta.sample_stats:
-                stats = chain.get_stats(svar.name, slc)
-                warmup_sample_stats[svar.name].append(stats[tune])
-                sample_stats[svar.name].append(stats[~tune])
+            if sample_stats_on:
+                for svar in self.meta.sample_stats:
+                    stats = chain.get_stats(svar.name, slc)
+                    warmup_sample_stats[svar.name].append(stats[tune])
+                    sample_stats[svar.name].append(stats[~tune])
+                ss = cast(Dict[str, Union[Sequence, numpy.ndarray]], sample_stats)
+                w_ss = cast(Dict[str, Union[Sequence, numpy.ndarray]], warmup_sample_stats)
+            else:
+                ss = None
+                w_ss = None
 
         w_pst = cast(Dict[str, Union[Sequence, numpy.ndarray]], warmup_posterior)
-        w_ss = cast(Dict[str, Union[Sequence, numpy.ndarray]], warmup_sample_stats)
+
         pst = cast(Dict[str, Union[Sequence, numpy.ndarray]], posterior)
-        ss = cast(Dict[str, Union[Sequence, numpy.ndarray]], sample_stats)
+
         if not equalize_chain_lengths:
             # Convert ragged arrays to object-dtyped ndarray because NumPy >=1.24.0 no longer does that automatically
+            if sample_stats_on:
+                w_ss = {k: as_array_from_ragged(v) for k, v in warmup_sample_stats.items()}
+                ss = {k: as_array_from_ragged(v) for k, v in sample_stats.items()}
+            else:
+                w_ss = None
+                ss = None
             w_pst = {k: as_array_from_ragged(v) for k, v in warmup_posterior.items()}
-            w_ss = {k: as_array_from_ragged(v) for k, v in warmup_sample_stats.items()}
+
             pst = {k: as_array_from_ragged(v) for k, v in posterior.items()}
-            ss = {k: as_array_from_ragged(v) for k, v in sample_stats.items()}
 
         idata = from_dict(
             warmup_posterior=w_pst,
