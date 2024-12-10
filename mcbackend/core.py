@@ -212,6 +212,7 @@ class Run:
             :param var_names:
             :param sample_stats_on:
         """
+        print("In Inference Data")
         if not _HAS_ARVIZ:
             raise ModuleNotFoundError("ArviZ is not installed.")
 
