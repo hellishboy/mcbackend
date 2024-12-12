@@ -309,7 +309,7 @@ class ClickHouseChain(Chain):
         dtype = var.dtype
         nshape = var.shape if not var.undefined_ndim else None
         # get rows from TSV
-        df = pandas.read_json(f'{dir_name}{var_name}_{str(self.cid)}.json')
+        df = pandas.read_json(f'{dir_name}{var_name}_{str(self.cid)}.json', lines=True)
         data = df.T
         #data = numpy.fromfile(file, dtype=dtype)
         draws = len(data)
