@@ -192,7 +192,7 @@ class Run:
         return {dv.name: ndarray_to_numpy(dv.value) for dv in self.meta.data if dv.is_observed}
 
     def to_inferencedata(self, *, var_names=None, sample_stats_on=False, nchains=4, from_file=False, dir_name=None,
-                         equalize_chain_lengths: bool = True, **kwargs) -> InferenceData:
+                         slice_start=0, equalize_chain_lengths: bool = True, **kwargs) -> InferenceData:
         """Creates an ArviZ ``InferenceData`` object from this run.
 
         Parameters
@@ -261,9 +261,9 @@ class Run:
             if min_clen is None:
                 # Every retrieved array is shortened to the previously determined chain length.
                 # Needed for backends which may get inserts inbetween our get_draws/get_stats calls.
-                slc = slice(0, chain_lengths[chain.cid])
+                slc = slice(slice_start, chain_lengths[chain.cid])
             else:
-                slc = slice(0, min_clen)
+                slc = slice(slice_start, min_clen)
 
             # Obtain a mask by which draws can be split into warmup/posterior
             try:
